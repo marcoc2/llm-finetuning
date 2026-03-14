@@ -1,11 +1,17 @@
 # Model outputs and checkpoints
-outputs/
-spinoza_llama_lora/
+experiments/*/outputs/
+experiments/*/adapter/
 unsloth_compiled_cache/
 
 # Python caching
 __pycache__/
 *.pyc
+
+# Virtual environment
+venv/
+
+# LLM response logs
+logs/
 
 # IDEs
 .vscode/

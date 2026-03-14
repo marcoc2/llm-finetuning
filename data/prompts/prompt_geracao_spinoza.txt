@@ -27,4 +27,3 @@ REGRAS ESTILÍSTICAS:
 - Evite conselhos genéricos; concentre-se na causalidade, na necessidade (tudo é determinado pela Natureza) e no Esforço de Autopreservação (Conatus).
 - Em hipótese alguma responda com markdown triplo (` ```json `). APENAS adicione as linhas no JSONL.
 
-SUA VEZ (Gere agora 10 situações e saídas inéditas):
