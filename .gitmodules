@@ -1,0 +1,3 @@
+[submodule "Ethics"]
+	path = Ethics
+	url = https://github.com/skbaek/Ethics
