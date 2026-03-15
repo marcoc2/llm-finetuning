@@ -1,0 +1,111 @@
+# Experimento 02: RAG + LoRA com Qwen 3.5-9B
+
+## Objetivo
+Um assistente spinozista que **raciocina com base no texto real da Ética** (via RAG) e **responde no formato/tom correto** (via LoRA). Diferente do experimento 01, onde a LLM tinha que "inventar" filosofia, aqui ela consulta o texto fonte antes de responder.
+
+## Arquitetura
+
+```
+                    ┌─────────────────┐
+   Pergunta ──────> │  Retrieval (RAG)│ ──> Trechos relevantes da Ética
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ Qwen 3.5-9B     │
+                    │  + LoRA (tom)   │ ──> Resposta spinozista fundamentada
+                    │  + Context (RAG)│
+                    └─────────────────┘
+```
+
+## Três Fases
+
+### Fase 1 — Knowledge Base (RAG)
+
+**Fontes para indexar:**
+- [sources/Ethics/Ethics.v](file:///f:/workspace/llm-finetuning/sources/Ethics/Ethics.v) — 569 linhas de provas formais em Coq (definições, axiomas, proposições)
+- Texto completo da Ética em português (a ser adquirido do Internet Archive, domínio público)
+- [data/prompts/prompt_geracao_spinoza.txt](file:///f:/workspace/llm-finetuning/data/prompts/prompt_geracao_spinoza.txt) — axiomas e regras estilísticas
+
+**Implementação:**
+- Embeddings: `sentence-transformers/all-MiniLM-L6-v2` (384 dims, rápido, multilingual)
+- Índice: FAISS (CPU, in-memory — a Ética inteira cabe em RAM folgado)
+- Chunking: ~300 palavras por chunk com 50 palavras de overlap
+- Script: `experiments/02_qwen9b_rag_lora/build_index.py`
+- Artefatos: `experiments/02_qwen9b_rag_lora/rag_index/` (FAISS index + chunks JSON)
+
+#### [NEW] `build_index.py`
+- Carrega e chunkeia os textos fonte
+- Gera embeddings com sentence-transformers
+- Salva índice FAISS + mapping chunk→texto
+
+---
+
+### Fase 2 — LoRA (Tom e Formato)
+
+**O que o LoRA ensina:** APENAS estilo e formato, NÃO conteúdo filosófico.
+- Tom: professoral, necessitarista, frio-geométrico
+- Formato: "1. Natureza do Afeto... 2. A Ilusão... 3. Conselho Racional..."
+- Vocabulário: conatus, afecções, modos finitos, substância, atributos
+
+**Modelo:** `unsloth/Qwen3.5-9B` (QLoRA 4-bit — cabe na 4090 com ~14GB VRAM)
+
+**Dataset:** O mesmo [data/datasets/spinoza_etica.jsonl](file:///f:/workspace/llm-finetuning/data/datasets/spinoza_etica.jsonl) que já temos (~400+ entradas)
+
+#### [NEW] [train.py](file:///f:/workspace/llm-finetuning/experiments/01_llama3b_lora/train.py)
+- Unsloth + SFTTrainer com QLoRA
+- `r=16`, `lora_alpha=16`, mesmos target modules
+- `max_steps=120` (dataset maior), `batch_size=2`, `grad_accum=4`
+
+---
+
+### Fase 3 — Inferência Combinada (RAG + LoRA)
+
+#### [NEW] [chat.py](file:///f:/workspace/llm-finetuning/experiments/01_llama3b_lora/chat.py)
+1. Usuário faz pergunta
+2. Busca os top-3 chunks mais relevantes no índice FAISS
+3. Monta prompt com contexto RAG:
+   ```
+   SYSTEM: Tu és um racionalista spinozista. Use os trechos abaixo da Ética como base...
+   
+   CONTEXTO DA ÉTICA:
+   [chunk 1]
+   [chunk 2]
+   [chunk 3]
+   
+   USER: {pergunta do usuário}
+   ```
+4. Envia ao Qwen 3.5-9B com LoRA carregado
+5. Resposta fundamentada no texto real
+
+## Estrutura de Arquivos
+
+```
+experiments/02_qwen9b_rag_lora/
+├── build_index.py      # Fase 1: indexar a Ética
+├── train.py            # Fase 2: treinar LoRA de tom
+├── chat.py             # Fase 3: inferência RAG + LoRA
+├── rag_index/          # Output da Fase 1
+│   ├── faiss.index
+│   └── chunks.json
+└── adapter/            # Output da Fase 2
+```
+
+## Dependências Novas
+
+```
+sentence-transformers   # embeddings para RAG
+faiss-cpu               # índice vetorial
+```
+
+> [!IMPORTANT]
+> **Texto da Ética em português**: Precisamos adquirir o texto completo. Uma opção de domínio público existe no Internet Archive. Alternativamente, podemos começar só com os axiomas Coq e expandir depois.
+
+## User Review Required
+
+1. **Começo com o Coq apenas ou quer que eu busque o texto completo em PT?** O Coq sozinho já dá uma base axiomática forte, mas o texto em português daria respostas mais ricas.
+2. **Sobre o modelo**: `Qwen3.5-9B` em QLoRA 4-bit usa ~14GB VRAM. Na sua 4090 (24GB) sobra espaço. Confirma?
+
+## Verification Plan
+1. Testar RAG isoladamente: query "conatus" → deve retornar definições e proposições relevantes
+2. Treinar LoRA e verificar loss curve
+3. Testar inferência combinada com mesma pergunta usada no exp. 01 para comparação
